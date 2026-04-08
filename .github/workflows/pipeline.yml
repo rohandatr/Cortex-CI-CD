@@ -1,27 +1,4 @@
-# name: Cortex Demo Pipeline
-
-# on:
-#   push:
-#     branches:
-#       - main
-
-# jobs:
-#   build:
-#     runs-on: ubuntu-latest
-
-#     steps:
-#     - name: Checkout Code
-#       uses: actions/checkout@v3
-
-#     - name: Build Docker Image
-#       run: docker build -t cortex-demo .
-
-#     - name: Test Step
-#       run: echo "Pipeline working"
-
-
-
-name: Cortex CLI Code Scan
+name: Cortex Cloud CI/CD Security Scan
 
 on:
   push:
@@ -30,46 +7,66 @@ on:
   workflow_dispatch:
 
 env:
-  CORTEX_API_KEY: ${{secrets.CORTEX_API_KEY}}
-  CORTEX_API_KEY_ID: ${{secrets.CORTEX_API_KEY_ID}}
+  CORTEX_API_KEY: ${{ secrets.CORTEX_API_KEY }}
+  CORTEX_API_KEY_ID: ${{ secrets.CORTEX_API_KEY_ID }}
   CORTEX_API_URL: https://api-atpl-nfr.xdr.in.paloaltonetworks.com
-  
+
 jobs:
-  cortex-code-scan:
+  cortex-security-scan:
     runs-on: ubuntu-latest
 
     steps:
+    # 🔹 Step 1: Checkout Code
     - name: Checkout Repository
-      uses: actions/checkout@v2
-    
+      uses: actions/checkout@v3
+
+    # 🔹 Step 2: Setup Node (for code scanning support)
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: 22
+        node-version: 18
 
     - name: Verify Node.js Version
       run: node -v
 
-    - name: Download cortexcli
+    # 🔹 Step 3: Download Cortex CLI
+    - name: Download Cortex CLI
       run: |
         set -x
-        crtx_resp=$(curl "${CORTEX_API_URL}/public_api/v1/unified-cli/releases/download-link?os=linux&architecture=amd64" \
+        sudo apt-get update && sudo apt-get install -y jq
+
+        crtx_resp=$(curl -s "${CORTEX_API_URL}/public_api/v1/unified-cli/releases/download-link?os=linux&architecture=amd64" \
           -H "x-xdr-auth-id: ${CORTEX_API_KEY_ID}" \
           -H "Authorization: ${CORTEX_API_KEY}")
+
         crtx_url=$(echo $crtx_resp | jq -r ".signed_url")
-        curl -o cortexcli $crtx_url
+
+        curl -L -o cortexcli $crtx_url
         chmod +x cortexcli
+
         ./cortexcli --version
 
-    - name: Run Cortex CLI Code Scan
+    # 🔹 Step 4: Run Code Scan (SAST + IaC + Secrets)
+    - name: Run Cortex Code Scan
       run: |
+        set -e
         ./cortexcli \
           --api-base-url "${CORTEX_API_URL}" \
           --api-key "${CORTEX_API_KEY}" \
           --api-key-id "${CORTEX_API_KEY_ID}" \
           code scan \
-          --directory "${{github.workspace}}" \
-          --repo-id "${{github.repository}}" \
-          --branch "${{github.ref_name}}" \
+          --directory "${{ github.workspace }}" \
+          --repo-id "${{ github.repository }}" \
+          --branch "${{ github.ref_name }}" \
           --source "GITHUB_ACTIONS" \
           --create-repo-if-missing
+
+    # 🔹 Step 5 (Optional but Recommended): Build Docker Image
+    - name: Build Docker Image
+      run: docker build -t cortex-demo .
+
+    # 🔹 Step 6 (Optional Advanced): Scan Container Image
+    - name: Scan Container Image
+      run: |
+        set -e
+        ./cortexcli image scan cortex-demo || true
