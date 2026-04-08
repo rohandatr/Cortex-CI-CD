@@ -1,0 +1,6 @@
+flask==1.0   # old vulnerable version -> This gives you SCA vulnerability\
+
+Docker file = FROM python:3.7    -> this is old image This gives you image vulnerability
+
+
+This gives you IaC misconfig -> acl    = "public-read"   # ❌ misconfiguration
